@@ -1,0 +1,392 @@
+import 'dart:io';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/material.dart';
+import '../LoginScreen.dart';
+import 'CustomConfirmationDialog.dart';
+import 'SettingsScreen.dart';
+import 'ModifierProfileScreen.dart';
+import 'GererCompteScreen.dart';
+import 'NotificationSettingsScreen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
+import 'FavoritesScreen.dart';
+
+class UserModel {
+  final String nomUsr;
+  final String username;
+  final String? photoURL;
+  final DateTime creationTime;
+  final String vaccinations;
+  final String groupeSanguin;
+  final String allergiesConnues;
+  final String antecedentsMedicaux;
+
+  UserModel({
+    required this.nomUsr,
+    required this.username,
+    this.photoURL,
+    required this.creationTime,
+    required this.vaccinations,
+    required this.groupeSanguin,
+    required this.allergiesConnues,
+    required this.antecedentsMedicaux,
+  });
+
+  factory UserModel.fromDocument(DocumentSnapshot doc, DateTime creationTime) {
+    return UserModel(
+      nomUsr: doc['nom_usr'],
+      username: doc['username'],
+      photoURL: doc['photoURL'],
+      creationTime: creationTime,
+      vaccinations: doc['vaccinations'],
+      groupeSanguin: doc['groupe_sanguin'],
+      allergiesConnues: doc['allergies_connues'],
+      antecedentsMedicaux: doc['antecedents_medicaux'],
+    );
+  }
+}
+
+class ProfilUserScreen extends StatefulWidget {
+  @override
+  _ProfilUserScreenState createState() => _ProfilUserScreenState();
+}
+
+class _ProfilUserScreenState extends State<ProfilUserScreen> {
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  File? _selectedImage;
+
+  void _showLogoutConfirmation(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (BuildContext context) {
+        return CustomConfirmationDialog(
+          onConfirm: () async {
+            await _logout();
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (context) => Loginscreen()),
+                  (Route<dynamic> route) => false,
+            );
+          },
+        );
+      },
+      isScrollControlled: true,
+    );
+  }
+
+  Future<void> _logout() async {
+    await _auth.signOut();
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.remove('isLoggedIn');
+  }
+
+  Future<UserModel?> _getUserData() async {
+    User? user = _auth.currentUser;
+    if (user != null) {
+      DocumentSnapshot doc = await FirebaseFirestore.instance
+          .collection('utilisateur')
+          .doc(user.uid)
+          .get();
+      if (doc.exists) {
+        return UserModel.fromDocument(doc, user.metadata.creationTime!);
+      }
+    }
+    return null;
+  }
+
+  Future<void> _pickImage() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+
+    if (pickedFile != null) {
+      setState(() {
+        _selectedImage = File(pickedFile.path);
+      });
+    }
+  }
+
+  Future<void> _uploadImage() async {
+    if (_selectedImage != null) {
+      User? user = _auth.currentUser;
+      if (user != null) {
+        try {
+          final storageRef = FirebaseStorage.instance.ref().child('profile_images').child('${user.uid}.jpg');
+          await storageRef.putFile(_selectedImage!);
+          final photoURL = await storageRef.getDownloadURL();
+
+          // Mise à jour de l'URL de la photo dans Firestore
+          await FirebaseFirestore.instance.collection('utilisateur').doc(user.uid).update({
+            'photoURL': photoURL,
+          });
+
+          setState(() {
+            // Mettre à jour l'URL de la photo dans l'état local
+            _selectedImage = null; // Clear the selected image
+          });
+
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Photo mise à jour')));
+        } catch (e) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur lors de la mise à jour de la photo')));
+        }
+      }
+    }
+  }
+
+  Widget buildCompteOption(BuildContext context, String title, Widget screen) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => screen),
+        );
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8.0),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: <Widget>[
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w500,
+                color: Colors.grey[600],
+              ),
+            ),
+            Icon(
+              Icons.arrow_forward_ios,
+              color: Colors.grey,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final width = size.width;
+    final height = size.height;
+
+    final isStabilized = width >= 460 && height >= 600;
+    final stableWidth = isStabilized ? 460.0 : width;
+    final stableHeight = isStabilized ? 600.0 : height;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          'Profil',
+          style: TextStyle(
+            fontSize: 24,
+            fontFamily: 'Poppins-SemiBold',
+          ),
+        ),
+      ),
+      body: Padding(
+        padding: EdgeInsets.symmetric(horizontal: stableWidth * 0.05),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: <Widget>[
+              SizedBox(height: stableHeight * 0.05),
+              FutureBuilder<UserModel?>(
+                future: _getUserData(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return CircularProgressIndicator();
+                  }
+                  if (snapshot.hasData) {
+                    UserModel user = snapshot.data!;
+                    return Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            CircleAvatar(
+                              radius: stableWidth * 0.2,
+                              backgroundImage: _selectedImage != null
+                                  ? FileImage(_selectedImage!)
+                                  : (user.photoURL != null && user.photoURL!.isNotEmpty
+                                  ? NetworkImage(user.photoURL!)
+                                  : AssetImage('assets/images/autres/profil_Images/img.png')) as ImageProvider,
+                            ),
+                            SizedBox(width: 20),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    user.nomUsr,
+                                    style: TextStyle(
+                                      fontSize: stableWidth * 0.07,
+                                      color: Colors.teal,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  GestureDetector(
+                                    onTap: _pickImage,
+                                    child: Text(
+                                      'Changer Photo',
+                                      style: TextStyle(
+                                        fontSize: stableWidth * 0.05,
+                                        color: Colors.blue,
+                                      ),
+                                    ),
+                                  ),
+                                  SizedBox(height: 8),
+                                  Text(
+                                    'Depuis ${DateFormat('MM/yyyy').format(user.creationTime)}',
+                                    style: TextStyle(
+                                      fontSize: stableWidth * 0.04,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    );
+                  } else {
+                    return Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            CircleAvatar(
+                              radius: stableWidth * 0.2,
+                              backgroundImage: AssetImage('assets/images/autres/profil_Images/img.png'),
+                            ),
+                            SizedBox(width: 20),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  GestureDetector(
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(builder: (context) => ModifierProfileScreen()),
+                                      );
+                                    },
+                                    child: Text(
+                                      'Changer Profil',
+                                      style: TextStyle(
+                                        fontSize: stableWidth * 0.06,
+                                        color: Colors.teal,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    );
+                  }
+                },
+              ),
+              SizedBox(height: stableHeight * 0.07),
+              GestureDetector(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => FavoritesScreen()),
+                  );
+                },
+                child: _buildImageSection(
+                  imagePath: 'assets/images/autres/profil_Images/favoris.png',
+                  text: 'Vos Favoris',
+                  width: stableWidth,
+                  leftPadding: stableWidth * 0.1,
+                ),
+              ),
+              _buildImageSection(
+                imagePath: 'assets/images/autres/profil_Images/payement.png',
+                text: 'Payement',
+                width: stableWidth,
+                leftPadding: stableWidth * 0.1,
+              ),
+              GestureDetector(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => NotificationSettingsScreen()),
+                  );
+                },
+                child: _buildImageSection(
+                  imagePath: 'assets/images/autres/profil_Images/notification.png',
+                  text: 'Gestion De Notification',
+                  width: stableWidth,
+                  leftPadding: stableWidth * 0.1,
+                ),
+              ),
+              GestureDetector(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => SettingsScreen()),
+                  );
+                },
+                child: _buildImageSection(
+                  imagePath: 'assets/images/autres/profil_Images/parametre.png',
+                  text: 'Paramètre',
+                  width: stableWidth,
+                  leftPadding: stableWidth * 0.1,
+                ),
+              ),
+              GestureDetector(
+                onTap: () => _showLogoutConfirmation(context),
+                child: _buildImageSection(
+                  imagePath: 'assets/images/autres/profil_Images/déconnexion.png',
+                  text: 'Déconnexion',
+                  width: stableWidth,
+                  leftPadding: stableWidth * 0.1,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildImageSection({
+    required String imagePath,
+    required String text,
+    required double width,
+    required double leftPadding,
+  }) {
+    return Padding(
+      padding: EdgeInsets.only(
+        top: 20.0,
+        left: leftPadding,
+      ),
+      child: Row(
+        children: [
+          Image.asset(
+            imagePath,
+            width: width * 0.1,
+            height: width * 0.1,
+            fit: BoxFit.cover,
+          ),
+          const SizedBox(width: 30),
+          Text(
+            text,
+            style: TextStyle(fontSize: 20, color: Colors.black),
+          ),
+        ],
+      ),
+    );
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "877714545403",
+    "project_id": "malikouramedecine",
+    "storage_bucket": "malikouramedecine.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:877714545403:android:c1a5caecb966eb9e42ee5e",
+        "android_client_info": {
+          "package_name": "com.example.medecineproject"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCNpwb3M5tNca8Z1JzZPTU9jzta8GoJFsg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
